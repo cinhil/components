@@ -3,7 +3,7 @@
 	<parent>
 		<groupId>org.talend.components</groupId>
 		<artifactId>components-parent</artifactId>
-		<version>0.20.0-SNAPSHOT</version>
+		<version>0.21.0-SNAPSHOT</version>
 		<relativePath>../../components-parent/pom.xml</relativePath>
 	</parent>
 
@@ -62,5 +62,6 @@
     <modules>
         <module>input-component-archetype</module>
         <module>poc-bd-archetype</module>
+        <module>processing-bd-component-archetype</module>
     </modules>
 </project>

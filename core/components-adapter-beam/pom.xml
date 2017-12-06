@@ -4,7 +4,7 @@
     <parent>
         <groupId>org.talend.components</groupId>
         <artifactId>components-adapter-beam-parent</artifactId>
-        <version>0.20.0-SNAPSHOT</version>
+        <version>0.21.0-SNAPSHOT</version>
         <relativePath>../components-adapter-beam-parent/pom.xml</relativePath>
     </parent>
 
@@ -20,6 +20,10 @@
             <artifactId>beam-sdks-java-core</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.apache.beam</groupId>
+            <artifactId>beam-sdks-java-extensions-google-cloud-platform-core</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.talend.daikon</groupId>
             <artifactId>daikon</artifactId>
         </dependency>
@@ -27,6 +31,11 @@
         <dependency>
             <groupId>com.google.auto.value</groupId>
             <artifactId>auto-value</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.auto.service</groupId>
+            <artifactId>auto-service</artifactId>
             <scope>provided</scope>
         </dependency>
 

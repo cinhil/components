@@ -173,7 +173,7 @@ public class RowGeneratorIO {
         }
 
         @Override
-        public void validate(PBegin input) {
+        public void validate(PipelineOptions options) {
             checkState(getJsonSchema() != null, "RowGeneratorIO.read() requires a schema" + " to be set via withSchema(schema)");
             checkState(getRows() >= 0, "RowGeneratorIO.read() requires withRows(rows)"
                     + " to be called with a non-negative value.");
@@ -240,7 +240,7 @@ public class RowGeneratorIO {
         }
 
         @Override
-        public List<BoundedRowGeneratorSource> splitIntoBundles(long desiredBundleSizeBytes, PipelineOptions options)
+        public List<BoundedRowGeneratorSource> split(long desiredBundleSizeBytes, PipelineOptions options)
                 throws Exception {
             // The desiredBundleSizeBytes is ignored to split the rows into the bundles specified by the spec.
             if (partitionId != -1) {
@@ -302,15 +302,11 @@ public class RowGeneratorIO {
 
         private BoundedRowGeneratorReader(BoundedRowGeneratorSource source) {
             this.source = source;
-            this.ctx = GeneratorFunction.GeneratorContext.of(source.partitionId);
+            this.ctx = GeneratorFunction.GeneratorContext.of(source.partitionId, source.spec.getSeed());
         }
 
         @Override
         public boolean start() {
-            // Set the random seed once if it hasn't already been set.
-            if (source.spec.getSeed() == null) {
-                ctx.setRandom(new Random(System.currentTimeMillis() + source.partitionId));
-            }
             return advance();
         }
 
@@ -324,10 +320,6 @@ public class RowGeneratorIO {
 
             // Update the row generator context for the next row.
             ctx.setRowId(source.startRowId + count);
-            if (source.spec.getSeed() != null) {
-                ctx.setRandom(new Random(source.spec.getSeed() + ctx.getRowId()));
-            }
-
             current = source.generator.apply(ctx);
             count++;
             return true;

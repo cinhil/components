@@ -12,12 +12,13 @@
 // ============================================================================
 package org.talend.components.adapter.beam.coders;
 
+import static org.talend.components.adapter.beam.transform.ConvertToIndexedRecord.convertToAvro;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Type;
-import java.util.Collections;
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -25,128 +26,223 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.IndexedRecord;
 import org.apache.beam.sdk.Pipeline;
-import org.apache.beam.sdk.coders.*;
-import org.apache.beam.sdk.coders.protobuf.ProtoCoder;
+import org.apache.beam.sdk.coders.AtomicCoder;
+import org.apache.beam.sdk.coders.AvroCoder;
+import org.apache.beam.sdk.coders.CannotProvideCoderException;
+import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.CoderException;
+import org.apache.beam.sdk.coders.CoderProvider;
+import org.apache.beam.sdk.coders.DefaultCoder;
 import org.apache.beam.sdk.values.TypeDescriptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.talend.components.adapter.beam.BeamAdapterErrorCode;
 import org.talend.components.adapter.beam.transform.ConvertToIndexedRecord;
-import org.talend.daikon.avro.AvroRegistry;
+import org.talend.daikon.avro.converter.IndexedRecordConverter;
+import org.talend.daikon.java8.Supplier;
 
+import com.google.common.annotations.VisibleForTesting;
+
+/**
+ * Encode and decode records using an Avro {@link Schema} discovered at runtime.
+ *
+ * Normally, Beam Coders can fully specify how an instance should be serialized when the pipeline is constructed. This
+ * Coder uses Avro serialization, but does not know the Avro {@link Schema} used to serialize the data is not known
+ * until the pipeline is actually run.
+ *
+ * This is accomplished by adding a "distributed state" to the pipeline in the form of the {@link AvroSchemaHolder}.
+ *
+ * @param <T> The expected type of object.
+ */
 public class LazyAvroCoder<T> extends AtomicCoder<Object> {
 
-    private final String id;
+    private static final Logger LOG = LoggerFactory.getLogger(LazyAvroCoder.class);
 
-    private transient AvroCoder internalAvroCoder;
+    private transient static ThreadLocal<Supplier<AvroSchemaHolder>> threadSchemaSupplierFactory;
 
-    private final static HashMap<String, Schema> schemaRegistry = new HashMap<>();
+    private final AvroSchemaHolder avroSchemaHolder;
 
-    private final static AtomicInteger count = new AtomicInteger();
+    private transient IndexedRecordConverter<T, IndexedRecord> converter;
+
+    private transient AvroCoder<IndexedRecord> internalAvroCoder;
 
     protected LazyAvroCoder() {
-        this("Lazy" + count.getAndIncrement());
+        this.avroSchemaHolder = getSchemaSupplier().get();
     }
 
-    protected LazyAvroCoder(String id) {
-        this.id = id;
+    public static void resetSchemaSupplier() {
+        Supplier<AvroSchemaHolder> schemaSupplierFactory = threadSchemaSupplierFactory.get();
+        if (schemaSupplierFactory instanceof StaticSchemaHolderSupplier) {
+            ((StaticSchemaHolderSupplier) schemaSupplierFactory).reset();
+        }
+        threadSchemaSupplierFactory.remove();
+    }
+
+    public static void setSchemaSupplier(Supplier<AvroSchemaHolder> factory) {
+        // Ensure that the schema supplier has not already been set.
+        if (threadSchemaSupplierFactory == null) {
+            threadSchemaSupplierFactory = new ThreadLocal<Supplier<AvroSchemaHolder>>();
+        } else if (LazyAvroCoder.threadSchemaSupplierFactory.get() != null) {
+            throw BeamAdapterErrorCode.createSchemaSupplierAlreadyExists(null, threadSchemaSupplierFactory.get().toString());
+        }
+        threadSchemaSupplierFactory.set(factory);
+    }
+
+    public static Supplier<AvroSchemaHolder> getSchemaSupplier() {
+        if (threadSchemaSupplierFactory == null) {
+            threadSchemaSupplierFactory = new ThreadLocal<Supplier<AvroSchemaHolder>>();
+        }
+        if (threadSchemaSupplierFactory.get() == null) {
+            threadSchemaSupplierFactory.set(new StaticSchemaHolderSupplier());
+        }
+        return threadSchemaSupplierFactory.get();
+    }
+
+    /**
+     * Returns a {@link CoderProvider} which uses the {@link LazyAvroCoderProvider} if possible for all types.
+     *
+     * <p>
+     * This method is invoked reflectively from {@link DefaultCoder}.
+     */
+    @SuppressWarnings("unused")
+    public static CoderProvider getCoderProvider() {
+        return new LazyAvroCoderProvider();
     }
 
     public static LazyAvroCoder of() {
         return new LazyAvroCoder();
     }
 
-    public static LazyAvroCoder of(String id) {
-        return new LazyAvroCoder(id);
-    }
-
-    public String getAvroSchemaId() {
-        return id;
-    }
-
     protected Schema getSchema() {
-        Schema schema = schemaRegistry.get(id);
+        Schema schema = avroSchemaHolder.get();
         if (schema == null) {
             // This should not occur, since the encode must be called before the schema is available. If it happens, it
             // is an unrecoverable error.
-            throw new Pipeline.PipelineExecutionException(new NoSuchElementException("No schema found for " + id));
+            throw new Pipeline.PipelineExecutionException(
+                    new NoSuchElementException("No schema found for " + avroSchemaHolder.getAvroSchemaId()));
         }
         return schema;
     }
 
     @Override
-    public void encode(Object value, OutputStream outputStream, Context context) throws CoderException, IOException {
-        if (internalAvroCoder == null) {
-            Schema s = (value instanceof IndexedRecord) ? ((IndexedRecord) value).getSchema() : ConvertToIndexedRecord
-                    .convertToAvro(value).getSchema();
-            schemaRegistry.put(id, s);
-            internalAvroCoder = AvroCoder.of(s);
+    public void encode(Object value, OutputStream outputStream) throws IOException {
+        if (converter == null) {
+            converter = ConvertToIndexedRecord.getConverter((T) value);
         }
-        if (value instanceof IndexedRecord)
-            internalAvroCoder.encode(value, outputStream, context);
-        else
-            internalAvroCoder.encode(ConvertToIndexedRecord.convertToAvro(value), outputStream, context);
+        IndexedRecord ir = converter.convertToAvro((T) value);
+        if (internalAvroCoder == null) {
+            Schema s = converter.getSchema();
+            avroSchemaHolder.put(s);
+            @SuppressWarnings("unchecked")
+            AvroCoder<IndexedRecord> tCoder = (AvroCoder<IndexedRecord>) (AvroCoder<? extends IndexedRecord>) AvroCoder
+                    .of(ir.getSchema());
+            internalAvroCoder = tCoder;
+        }
+        LOG.debug("Internal AvroCoder's schema is {}", internalAvroCoder.getSchema());
+        LOG.debug("Encode value is {}", value);
+        internalAvroCoder.encode(convertToAvro(value), outputStream);
     }
 
     @Override
-    public T decode(InputStream inputStream, Context context) throws CoderException, IOException {
+    public T decode(InputStream inputStream) throws CoderException, IOException {
         if (internalAvroCoder == null) {
-            internalAvroCoder = AvroCoder.of(getSchema());
+            @SuppressWarnings("unchecked")
+            AvroCoder<IndexedRecord> tCoder = (AvroCoder<IndexedRecord>) (AvroCoder<? extends IndexedRecord>) AvroCoder
+                    .of(getSchema());
+            internalAvroCoder = tCoder;
         }
-        return (T) internalAvroCoder.decode(inputStream, context);
-    }
-
-    public static void registerAsFallback(Pipeline p) {
-        p.getCoderRegistry().setFallbackCoderProvider(
-                CoderProviders.firstOf(p.getCoderRegistry().getFallbackCoderProvider(), LazyAvroCoder.coderProvider()));
+        return (T) internalAvroCoder.decode(inputStream);
     }
 
     /**
-     * The implementation of the {@link CoderProvider} for this {@link ProtoCoder} returned by {@link #coderProvider()}.
+     * A AvroSchemaHolder supplier that can be used if none is specified.
+     *
+     * This stores schemas in a list in memory, so either
+     * <ol>
+     * <li>any Beam Pipeline must run in a single JVM, or</li>
+     * <li>the PCollections that use this coder must not have their data transferred across nodes in a reduce-type or
+     * repartitioning operation.</li>
+     * </ol>
      */
-    private static CoderProvider PROVIDER = new CoderProvider() {
+    @VisibleForTesting
+    static class StaticSchemaHolderSupplier implements Supplier<AvroSchemaHolder> {
 
-        final AvroRegistry registry = new AvroRegistry();
+        private static final AtomicInteger count = new AtomicInteger();
+
+        private static final ArrayList<Schema> schemaList = new ArrayList<>();
 
         @Override
-        public <T> Coder<T> getCoder(TypeDescriptor<T> type) throws CannotProvideCoderException {
+        public AvroSchemaHolder get() {
+            return new StaticSchemaHolder();
+        }
 
-            Type t = type.getType();
-            if (t instanceof Class && registry.createIndexedRecordConverter((Class<?>) t) != null) {
-                return LazyAvroCoder.of();
+        /**
+         * This must only be called when there are no running Pipelines using a static LazyAvroCoder.
+         */
+        public static void reset() {
+            count.set(0);
+            schemaList.clear();
+        }
+
+        @VisibleForTesting
+        static Integer getCount() {
+            return count.get();
+        }
+
+        @VisibleForTesting
+        static List<Schema> getSchemas() {
+            return schemaList;
+        }
+
+        synchronized private static Schema getSchema(int i) {
+            return schemaList.size() > i ? StaticSchemaHolderSupplier.schemaList.get(i) : null;
+        }
+
+        synchronized private static void putSchema(int i, Schema s) {
+            // Ensure that the array has enough space to hold the schema.
+            while (StaticSchemaHolderSupplier.schemaList.size() < i + 1)
+                StaticSchemaHolderSupplier.schemaList.add(null);
+            StaticSchemaHolderSupplier.schemaList.set(i, s);
+        }
+
+        private static class StaticSchemaHolder implements AvroSchemaHolder {
+
+            private final int uid = StaticSchemaHolderSupplier.count.getAndIncrement();
+
+            @Override
+            public String getAvroSchemaId() {
+                return "Lazy" + uid;
             }
-            throw new CannotProvideCoderException(String.format("Cannot provide %s because %s is not registered in the %s.",
-                    LazyAvroCoder.class.getSimpleName(), type, AvroRegistry.class.getSimpleName()));
+
+            @Override
+            public Schema get() {
+                return StaticSchemaHolderSupplier.getSchema(uid);
+            }
+
+            @Override
+            public void put(Schema s) {
+                StaticSchemaHolderSupplier.putSchema(uid, s);
+            }
         }
-    };
-
-    /**
-     * The implementation of the {@link CoderProvider} for this {@link ProtoCoder} returned by {@link #coderProvider()}.
-     */
-    private static CoderFactory FACTORY = new CoderFactory() {
-
-        @Override
-        public Coder<?> create(List<? extends Coder<?>> componentCoders) {
-            return LazyAvroCoder.of();
-        }
-
-        @Override
-        public List<Object> getInstanceComponents(Object value) {
-            return Collections.emptyList();
-        }
-    };
-
-    /**
-     * A {@link CoderProvider} that returns a {@link LazyAvroCoder} if it is possible to encode/decode the given class
-     * or type.
-     */
-    private static CoderProvider coderProvider() {
-        return PROVIDER;
     }
 
     /**
-     * A {@link CoderProvider} that returns a {@link LazyAvroCoder} if it is possible to encode/decode the given class
-     * or type.
+     * A {@link CoderProvider} that constructs a {@link LazyAvroCoderProvider} for any class that implements IndexedRecord.
      */
-    public static CoderFactory coderFactory() {
-        return FACTORY;
+    static class LazyAvroCoderProvider extends CoderProvider {
+
+        @Override
+        public <T> Coder<T> coderFor(TypeDescriptor<T> typeDescriptor, List<? extends Coder<?>> componentCoders)
+                throws CannotProvideCoderException {
+
+            Type t = typeDescriptor.getType();
+            if (IndexedRecord.class.isAssignableFrom(typeDescriptor.getRawType())) {
+                Coder<T> c = LazyAvroCoder.<T> of();
+                return c;
+            }
+            throw new CannotProvideCoderException(String.format("Cannot provide %s because %s is not implement IndexedRecord",
+                    LazyAvroCoder.class.getSimpleName(), typeDescriptor));
+        }
     }
 
 }

@@ -4,7 +4,7 @@
     <parent>
         <groupId>org.talend.components</groupId>
         <artifactId>components-adapter-beam-parent</artifactId>
-        <version>0.20.0-SNAPSHOT</version>
+        <version>0.21.0-SNAPSHOT</version>
         <relativePath>../../../core/components-adapter-beam-parent/pom.xml</relativePath>
     </parent>
 
@@ -12,6 +12,10 @@
 
     <name>Components - JMS Runtime 1.1</name>
     <packaging>jar</packaging>
+
+    <properties>
+        <coverage.sonar.reportRoot>${project.basedir}/..</coverage.sonar.reportRoot>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -42,6 +46,27 @@
 
         <!-- Tests -->
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>2.20-PAXEXAM-PATCH</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <argLine>-Xms512m -Xmx1024m ${jacoco.agent.it.argLine}</argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 
     <profiles>
 

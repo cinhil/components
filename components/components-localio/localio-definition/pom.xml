@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.talend.components</groupId>
 		<artifactId>components-parent</artifactId>
-		<version>0.20.0-SNAPSHOT</version>
+		<version>0.21.0-SNAPSHOT</version>
 		<relativePath>../../../components-parent/pom.xml</relativePath>
 	</parent>
 
@@ -12,6 +12,10 @@
 
 	<name>Components - Local IO Definition</name>
 	<packaging>jar</packaging>
+
+	<properties>
+		<coverage.sonar.reportRoot>${project.basedir}/..</coverage.sonar.reportRoot>
+	</properties>
 
 	<dependencies>
 		<dependency>

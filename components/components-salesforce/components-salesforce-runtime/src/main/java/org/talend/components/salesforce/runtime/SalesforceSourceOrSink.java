@@ -118,7 +118,7 @@ public class SalesforceSourceOrSink implements SalesforceRuntimeSourceOrSink, Sa
     protected BulkConnection connectBulk(ConnectorConfig config) throws ComponentException {
         final SalesforceConnectionProperties connProps = getConnectionProperties();
         /*
-         * When PartnerConnection is instantiated, a login is implicitly executed and, if successful, a valid session is
+         * When PartnerConnection is instantiated, a login is implicitly executed and, if successful, a valid session id is
          * stored in the ConnectorConfig instance. Use this key to initialize a BulkConnection:
          */
         ConnectorConfig bulkConfig = new ConnectorConfig();
@@ -167,7 +167,7 @@ public class SalesforceSourceOrSink implements SalesforceRuntimeSourceOrSink, Sa
             String endpoint = connProps.endpoint.getStringValue();
             endpoint = StringUtils.strip(endpoint, "\"");
             if (SalesforceConnectionProperties.LoginType.OAuth.equals(connProps.loginType.getValue())) {
-                SalesforceOAuthConnection oauthConnection = new SalesforceOAuthConnection(connProps.oauth, endpoint,
+                SalesforceOAuthConnection oauthConnection = new SalesforceOAuthConnection(connProps, endpoint,
                         connProps.apiVersion.getValue());
                 oauthConnection.login(config);
             } else {
@@ -232,7 +232,7 @@ public class SalesforceSourceOrSink implements SalesforceRuntimeSourceOrSink, Sa
                         ch.connection = (PartnerConnection) sharedConn;
                     } else if (sharedConn instanceof BulkConnection) {
                         ch.bulkConnection = (BulkConnection) sharedConn;
-                    } else if (sharedConn instanceof ConnectionHolder){
+                    } else if (sharedConn instanceof ConnectionHolder) {
                         return (ConnectionHolder) sharedConn;
                     }
                     return ch;
@@ -243,13 +243,11 @@ public class SalesforceSourceOrSink implements SalesforceRuntimeSourceOrSink, Sa
             connProps = connProps.getReferencedConnectionProperties();
         }
 
-        // FIXME add back reffed connection
-
         ConnectorConfig config = new ConnectorConfig();
         config.setUsername(StringUtils.strip(connProps.userPassword.userId.getStringValue(), "\""));
         String password = StringUtils.strip(connProps.userPassword.password.getStringValue(), "\"");
         String securityKey = StringUtils.strip(connProps.userPassword.securityKey.getStringValue(), "\"");
-        if (!StringUtils.isEmpty(securityKey)) {
+        if (StringUtils.isNotEmpty(securityKey)) {
             password = password + securityKey;
         }
         config.setPassword(password);

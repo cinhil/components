@@ -25,6 +25,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import javax.xml.datatype.DatatypeConfigurationException;
 import javax.xml.datatype.DatatypeFactory;
@@ -50,7 +51,6 @@ import org.talend.components.netsuite.client.model.customfield.CustomFieldRefTyp
 import org.talend.components.netsuite.json.NsTypeResolverBuilder;
 import org.talend.daikon.avro.AvroRegistry;
 import org.talend.daikon.avro.converter.AvroConverter;
-import org.talend.daikon.di.DiSchemaConstants;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.module.jaxb.JaxbAnnotationModule;
@@ -134,7 +134,7 @@ public abstract class NsObjectTransducer {
 
         Map<String, FieldDesc> fieldMap = typeDesc.getFieldMap();
 
-        String dynamicPosProp = designSchema.getProp(DiSchemaConstants.TALEND6_DYNAMIC_COLUMN_POSITION);
+        String dynamicPosProp = designSchema.getProp(NetSuiteSchemaConstants.TALEND6_DYNAMIC_COLUMN_POSITION);
         List<Schema.Field> fields = new ArrayList<>();
 
         if (dynamicPosProp != null) {
@@ -439,6 +439,8 @@ public abstract class NsObjectTransducer {
             valueClass = XMLGregorianCalendar.class;
             break;
         case SELECT:
+            valueClass = getPicklistClass();
+            break;
         case MULTI_SELECT:
         default:
             valueClass = null;
@@ -471,6 +473,24 @@ public abstract class NsObjectTransducer {
             converter = new NullConverter(valueClass, null);
         }
         return converter;
+    }
+    
+    protected abstract String getApiVersion();
+    
+    public Class<?> getPicklistClass(){
+        String version = getApiVersion();
+        String pattern = "20\\d{2}\\.\\d+";
+        if(version != null && Pattern.matches(pattern, version)){
+            Class<?> valueClass;
+            try {
+                valueClass = Class.forName("com.netsuite.webservices.v"+version.replace('.', '_')+".platform.core.ListOrRecordRef");
+            } catch (ClassNotFoundException e) {
+                return null;
+                //ignore
+            }
+            return valueClass;
+        }
+        return null;
     }
 
     /**

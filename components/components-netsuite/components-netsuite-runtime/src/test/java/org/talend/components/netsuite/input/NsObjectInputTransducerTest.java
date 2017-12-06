@@ -25,6 +25,7 @@ import org.apache.avro.generic.IndexedRecord;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import static org.junit.Assert.assertNull;
 import org.talend.components.netsuite.NetSuiteDatasetRuntimeImpl;
 import org.talend.components.netsuite.NetSuiteMockTestBase;
 import org.talend.components.netsuite.client.CustomMetaDataSource;
@@ -33,7 +34,7 @@ import org.talend.components.netsuite.client.model.RefType;
 import org.talend.components.netsuite.client.model.TypeDesc;
 import org.talend.components.netsuite.client.search.SearchResultSet;
 import org.talend.daikon.avro.AvroUtils;
-import org.talend.daikon.di.DiSchemaConstants;
+import org.talend.components.netsuite.NetSuiteSchemaConstants;
 
 import com.netsuite.webservices.test.platform.NetSuitePortType;
 import com.netsuite.webservices.test.platform.core.Record;
@@ -169,8 +170,8 @@ public class NsObjectInputTransducerTest extends NetSuiteMockTestBase {
                 .noDefault()
                 //
                 .endRecord();
-        designSchema.addProp(DiSchemaConstants.TALEND6_DYNAMIC_COLUMN_POSITION, "1");
-        designSchema.addProp(DiSchemaConstants.TALEND6_DYNAMIC_COLUMN_ID, "dynamic");
+        designSchema.addProp(NetSuiteSchemaConstants.TALEND6_DYNAMIC_COLUMN_POSITION, "1");
+        designSchema.addProp(NetSuiteSchemaConstants.TALEND6_DYNAMIC_COLUMN_ID, "dynamic");
 
         Schema schema = AvroUtils.setIncludeAllFields(designSchema, true);
 
@@ -215,8 +216,8 @@ public class NsObjectInputTransducerTest extends NetSuiteMockTestBase {
                 .noDefault()
                 //
                 .endRecord();
-        designSchema.addProp(DiSchemaConstants.TALEND6_DYNAMIC_COLUMN_POSITION, "3");
-        designSchema.addProp(DiSchemaConstants.TALEND6_DYNAMIC_COLUMN_ID, "dynamic");
+        designSchema.addProp(NetSuiteSchemaConstants.TALEND6_DYNAMIC_COLUMN_POSITION, "3");
+        designSchema.addProp(NetSuiteSchemaConstants.TALEND6_DYNAMIC_COLUMN_ID, "dynamic");
 
         Schema schema = AvroUtils.setIncludeAllFields(designSchema, true);
 
@@ -260,5 +261,21 @@ public class NsObjectInputTransducerTest extends NetSuiteMockTestBase {
             IndexedRecord indexedRecord = transducer.read(record);
             assertIndexedRecord(typeDesc, indexedRecord);
         }
+    }
+    
+    @Test
+    public void testGetApiVersion() throws Exception {
+        
+        TypeDesc typeDesc = clientService.getMetaDataSource().getTypeInfo("Opportunity");
+
+        Schema schema = NetSuiteDatasetRuntimeImpl.inferSchemaForType(typeDesc.getTypeName(), typeDesc.getFields());
+
+        NsObjectInputTransducer transducer = new NsObjectInputTransducer(clientService, schema, typeDesc.getTypeName());
+        
+        transducer.setApiVersion("2016.2");
+        assertNull(transducer.getPicklistClass());
+        
+       
+        
     }
 }

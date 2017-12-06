@@ -4,7 +4,7 @@
     <parent>
         <groupId>org.talend.components</groupId>
         <artifactId>components-parent</artifactId>
-        <version>0.20.0-SNAPSHOT</version>
+        <version>0.21.0-SNAPSHOT</version>
         <relativePath>../../../components-parent/pom.xml</relativePath>
     </parent>
 
@@ -16,6 +16,7 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <coverage.sonar.reportRoot>${project.basedir}/..</coverage.sonar.reportRoot>
     </properties>
 
     <dependencies>

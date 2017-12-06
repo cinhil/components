@@ -5,7 +5,7 @@
 	<groupId>org.talend.components</groupId>
 	<artifactId>components-parent</artifactId>
 	<packaging>pom</packaging>
-	<version>0.20.0-SNAPSHOT</version>
+	<version>0.21.0-SNAPSHOT</version>
 
 	<name>Component Parent POM</name>
 	<properties>
@@ -15,8 +15,8 @@
 		<!-- version properties will go to some bom pom -->
 		<spring.boot.version>1.5.1.RELEASE</spring.boot.version>
 		<avro.version>1.8.1</avro.version>
-		<components.version>0.20.0-SNAPSHOT</components.version>
-		<daikon.version>0.18.0-SNAPSHOT</daikon.version>
+		<components.version>0.21.0-SNAPSHOT</components.version>
+		<daikon.version>0.19.0-SNAPSHOT</daikon.version>
 		<guava.version>19.0</guava.version>
 		<hamcrest.version>1.3</hamcrest.version>
 		<org.json.version>20131018</org.json.version>
@@ -27,6 +27,11 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<docker.removeVolumes>true</docker.removeVolumes>
 		<talend_snapshots_deployment>https://artifacts-oss.talend.com/nexus/content/repositories/TalendOpenSourceSnapshot/</talend_snapshots_deployment>
+
+		<coverage.sonar.reportRoot>${project.basedir}</coverage.sonar.reportRoot>
+		<sonar.jacoco.reportPath>${coverage.sonar.reportRoot}/target/jacoco.exec</sonar.jacoco.reportPath>
+		<sonar.jacoco.itReportPath>${coverage.sonar.reportRoot}/target/jacoco-it.exec</sonar.jacoco.itReportPath>
+
 	</properties>
 
 	<scm>
@@ -303,11 +308,23 @@
 		<repository>
 			<id>releases</id>
 			<url>https://artifacts-oss.talend.com/nexus/content/repositories/TalendOpenSourceRelease/</url>
+			<releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
 		</repository>
 		<repository>
 			<id>talend_nexus</id>
 			<name>snapshots</name>
 			<url>https://artifacts-oss.talend.com/nexus/content/repositories/TalendOpenSourceSnapshot/</url>
+			<releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
 		</repository>
 		<!--<repository> -->
 		<!--<id>talend_beam</id> -->
@@ -430,6 +447,7 @@
 				<artifactId>maven-failsafe-plugin</artifactId>
 				<version>2.18</version>
 				<configuration>
+					<argLine>${jacoco.agent.it.argLine}</argLine>
 					<systemProperties>
 						<!-- settings.xml and repo are used for pax tests on branch build that 
 							mirror the talend_nexus repo -->
@@ -448,25 +466,48 @@
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
-				<version>0.7.7.201606060606</version>
+				<version>0.7.8</version>
+				<configuration>
+					<includes>
+						<includes>org/talend/**/*</includes>
+					</includes>
+				</configuration>
 				<executions>
 					<execution>
-						<id>default-prepare-agent</id>
+						<id>prepare-agent-ut</id>
 						<goals>
 							<goal>prepare-agent</goal>
 						</goals>
+						<configuration>
+							<append>true</append>
+						</configuration>
 					</execution>
 					<execution>
-						<id>default-report</id>
+						<id>prepare-agent-it</id>
+						<phase>pre-integration-test</phase>
+						<goals>
+							<goal>prepare-agent-integration</goal>
+						</goals>
+						<configuration>
+							<propertyName>jacoco.agent.it.argLine</propertyName>
+							<append>true</append>
+						</configuration>
+					</execution>
+					<execution>
+						<id>report</id>
 						<phase>prepare-package</phase>
 						<goals>
 							<goal>report</goal>
 						</goals>
 					</execution>
+					<execution>
+						<id>report-it</id>
+						<phase>post-integration-test</phase>
+						<goals>
+							<goal>report-integration</goal>
+						</goals>
+					</execution>
 				</executions>
-				<configuration>
-					<append>true</append>
-				</configuration>
 			</plugin>
 			<!-- this was supposed to deploy only when all the modules are succesfully 
 				build -->

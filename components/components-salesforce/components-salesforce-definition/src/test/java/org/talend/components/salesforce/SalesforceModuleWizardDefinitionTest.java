@@ -34,13 +34,13 @@ public class SalesforceModuleWizardDefinitionTest {
     private final String repoLocation = "___DRI";
 
     private SalesforceModuleWizardDefinition definition;
-    private SalesforceModuleProperties properties;
+    private SalesforceModuleListProperties properties;
 
     @Before
     public void setUp() {
         definition = new SalesforceModuleWizardDefinition();
 
-        properties = new SalesforceModuleProperties("module");
+        properties = new SalesforceModuleListProperties("module");
         properties.init();
     }
 
@@ -52,7 +52,7 @@ public class SalesforceModuleWizardDefinitionTest {
 
     @Test
     public void testCreateWizard() {
-        ComponentWizard wizard = definition.createWizard(properties.connection, repoLocation);
+        ComponentWizard wizard = definition.createWizard(properties.getConnectionProperties(), repoLocation);
 
         assertThat(wizard, instanceOf(SalesforceModuleWizard.class));
         assertEquals(definition, wizard.getDefinition());
@@ -64,5 +64,11 @@ public class SalesforceModuleWizardDefinitionTest {
         assertNotNull(definition.getImagePath(DefinitionImageType.TREE_ICON_16X16));
         assertNotNull(definition.getImagePath(DefinitionImageType.WIZARD_BANNER_75X66));
         assertNull(definition.getImagePath(DefinitionImageType.SVG_ICON));
+    }
+    
+    @Test
+    public void testGetMenuItemName() {
+        SalesforceModuleWizardDefinition definition = new SalesforceModuleWizardDefinition();
+        assertEquals("Salesforce Modules", definition.getMenuItemName());
     }
 }
